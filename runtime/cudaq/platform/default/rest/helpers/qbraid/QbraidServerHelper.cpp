@@ -13,7 +13,7 @@ namespace cudaq {
 class QbraidServerHelper : public ServerHelper {
   static constexpr const char *DEFAULT_URL = "https://api.qbraid.com/api";
   static constexpr const char *DEFAULT_DEVICE = "qbraid_qir_simulator";
-  static constexpr int DEFAULT_QUBITS = 29;  // Added default qubit count
+  static constexpr int DEFAULT_QUBITS = 29;  
 
 public:
   const std::string name() const override { return "qbraid"; }
@@ -33,13 +33,13 @@ public:
     
     // Job endpoints
     backendConfig["job_path"] = backendConfig["url"] + "/quantum-jobs";
-    
-    // Set shots if provided
+
+
     if (!config["shots"].empty()) {
       backendConfig["shots"] = config["shots"];
       this->setShots(std::stoul(config["shots"]));
     } else {
-      backendConfig["shots"] = "1000";  // Default shots
+      backendConfig["shots"] = "1000"; 
       this->setShots(1000);
     }
 
@@ -113,17 +113,6 @@ cudaq::sample_result processResults(ServerMessage &getJobResponse,
 
     cudaq::info("Processing results for job {}", jobId);
     cudaq::info("Full response: {}", getJobResponse.dump(2));
-
-    // if (!getJobResponse.contains("jobsArray")) {
-    //     cudaq::info("Response missing jobsArray field");
-    //     throw std::runtime_error("Invalid job response format: missing jobsArray");
-    // }
-
-    // if (getJobResponse["jobsArray"].empty()) {
-    //     cudaq::info("jobsArray is empty");
-    //     throw std::runtime_error("Invalid job response format: empty jobsArray");
-    // }
-
     auto &job = getJobResponse["jobsArray"][0];
     
     cudaq::info("Job fields available: ");
@@ -162,7 +151,6 @@ cudaq::sample_result processResults(ServerMessage &getJobResponse,
 
     return cudaq::sample_result(execResults);
 }
-
 
 private:
 
