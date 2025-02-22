@@ -89,6 +89,7 @@ Photonics
 PyPI
 Pygments
 QAOA
+qBraid
 QCaaS
 QEC
 QIR

@@ -1,5 +1,5 @@
 # ============================================================================ #
-# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2025 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -7,7 +7,7 @@
 # ============================================================================ #
 
 name: qbraid
-description: "CUDA-Q target for qbraid."
+description: "CUDA-Q target for qBraid."
 config:
   # Tell DefaultQuantumPlatform what QPU subtype to use
   platform-qpu: remote_rest
@@ -16,12 +16,11 @@ config:
   # Add the rest-qpu library to the link list
   link-libs: ["-lcudaq-rest-qpu"]
   # Define the lowering pipeline
-  platform-lowering-config: "func.func(const-prop-complex,canonicalize,cse,lift-array-alloc),globalize-array-values,func.func(state-prep),unitary-synthesis,canonicalize,apply-op-specialization,aggressive-early-inlining,expand-measurements,unrolling-pipeline,decomposition{enable-patterns=U3ToRotations},func.func(lower-to-cfg,canonicalize,multicontrol-decomposition)"
+  platform-lowering-config: "classical-optimization-pipeline,globalize-array-values,func.func(state-prep),unitary-synthesis,canonicalize,apply-op-specialization,aggressive-early-inlining,expand-measurements,classical-optimization-pipeline,decomposition{enable-patterns=U3ToRotations},func.func(lower-to-cfg,canonicalize,multicontrol-decomposition),qbraid-gate-set-mapping"
   # Tell the rest-qpu that we are generating QIR.
   codegen-emission: qir-base
-  # Additional passes to run after lowering to QIR
-  # This is required due to https://github.com/NVIDIA/cuda-quantum/issues/512
-  #post-codegen-passes: "remove-measurements"
+
+>>>>>>> 10159223afdd6fc8cee7c893aef18d9826543dd0
   # Library mode is only for simulators, physical backends must turn this off
   library-mode: true
 
@@ -30,19 +29,14 @@ target-arguments:
     required: false
     type: string
     platform-arg: qpu 
-    help-string: "Specify the qbraid QPU."
-  - key: noise-model
+    help-string: "Specify the qBraid device to run on."
+  - key: entrypoint
     required: false
     type: string
-    platform-arg: noise 
-    help-string: "Specify the noise model for simulation."
-  - key: debias
+    platform-arg: entrypoint
+    help-string: "Specify the name of the entrypoint function to execute in the QIR program."
+  - key: seed
     required: false
-    type: string
-    platform-arg: debias 
-    help-string: "Specify debiasing."
-  - key: sharpen
-    required: false
-    type: string
-    platform-arg: sharpen
-    help-string: "Specify sharpening."
+    type: integer
+    platform-arg: seed
+    help-string: "Specify the value to use when seeding the random number generator used for quantum simulation"
