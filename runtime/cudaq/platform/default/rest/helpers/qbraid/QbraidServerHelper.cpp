@@ -33,6 +33,8 @@ public:
     
     // Job endpoints
     backendConfig["job_path"] = backendConfig["url"] + "/quantum-jobs";
+    // result endpoints
+    backendConfig["results_path"] = backendConfig["url"] + "/quantum-jobs/result/";
 
 
     if (!config["shots"].empty()) {
@@ -93,63 +95,97 @@ public:
     return backendConfig.at("job_path") + "?vendorJobId=" + jobId;
   }
 
-  bool jobIsDone(ServerMessage &getJobResponse) override {
-    if (!getJobResponse.contains("jobsArray") || getJobResponse["jobsArray"].empty()) {
-      cudaq::info("Invalid job response format: {}", getJobResponse.dump());
-      throw std::runtime_error("Invalid job response format");
-    }
-
-    auto status = getJobResponse["jobsArray"][0]["status"].get<std::string>();
-    cudaq::info("Job status: {}", status);
-    
-    if (status == "FAILED")
-      throw std::runtime_error("The job failed upon submission. Check your qBraid account for more information.");
-    
-    return status == "COMPLETED";
+  // getting results path
+  std::string constructGetResultsPath(const std::string &jobId) {
+    return backendConfig.at("results_path") + jobId;
   }
 
+// Job is done with sample results api
+  bool jobIsDone(ServerMessage &getJobResponse) override {
+    // First try checking with the original method
+    if (getJobResponse.contains("jobsArray") && !getJobResponse["jobsArray"].empty()) {
+      auto status = getJobResponse["jobsArray"][0]["status"].get<std::string>();
+      cudaq::info("Job status from jobs endpoint: {}", status);
+      
+      if (status == "FAILED")
+        throw std::runtime_error("The job failed upon submission. Check your qBraid account for more information.");
+      
+      return status == "COMPLETED";
+    }
+    
+    // If the response doesn't have the expected format, check if it's using the new format
+    if (getJobResponse.contains("data") && getJobResponse["data"].contains("status")) {
+      auto status = getJobResponse["data"]["status"].get<std::string>();
+      cudaq::info("Job status from direct endpoint: {}", status);
+      
+      if (status == "FAILED")
+        throw std::runtime_error("The job failed upon submission. Check your qBraid account for more information.");
+      
+      return status == "COMPLETED";
+    }
+    
+    cudaq::info("Unexpected job response format: {}", getJobResponse.dump());
+    throw std::runtime_error("Invalid job response format");
+  }
+
+// sample results with results api
 cudaq::sample_result processResults(ServerMessage &getJobResponse,
-                                  std::string &jobId) override {
-
-    cudaq::info("Processing results for job {}", jobId);
-    cudaq::info("Full response: {}", getJobResponse.dump(2));
-    auto &job = getJobResponse["jobsArray"][0];
+                                   std::string &jobId) override {
+  // Try to get results using the direct results endpoint first
+  try {
+    auto resultsPath = constructGetResultsPath(jobId);
+    auto headers = getHeaders();
     
-    cudaq::info("Job fields available: ");
-    for (const auto& [key, value] : job.items()) {
-        cudaq::info("  {} = {}", key, value.dump());
+    cudaq::info("Fetching results using direct endpoint: {}", resultsPath);
+    RestClient client;
+    auto resultJson = client.get("", resultsPath, headers, true);
+
+    if (resultJson.contains("error") && !resultJson["error"].is_null()) {
+      cudaq::info("Error from results endpoint: {}", resultJson["error"].dump());
+      throw std::runtime_error("Error retrieving results: " + resultJson["error"].dump());
     }
-
-    if (!job.contains("measurementCounts")) {
-        cudaq::info("Job response missing measurementCounts field. Available fields:");
-        for (const auto& [key, value] : job.items()) {
-            cudaq::info("  {}", key);
-        }
-        
-        if (job.contains("results") || job.contains("counts") || job.contains("measurements")) {
-            cudaq::info("Found alternative results field!");
-
-            if (job.contains("results")) cudaq::info("results field: {}", job["results"].dump());
-            if (job.contains("counts")) cudaq::info("counts field: {}", job["counts"].dump());
-            if (job.contains("measurements")) cudaq::info("measurements field: {}", job["measurements"].dump());
-        }
-        
-        throw std::runtime_error("No measurement counts in response");
-    }
-
-    CountsDictionary counts;
-    auto &measurements = job["measurementCounts"];
     
-    cudaq::info("Found measurements: {}", measurements.dump());
-
-    for (const auto &[bitstring, count] : measurements.items()) {
-        counts[bitstring] = count.get<std::size_t>();
+    if (resultJson.contains("data") && 
+        resultJson["data"].contains("measurementCounts")) {
+      cudaq::info("Processing results from direct endpoint");
+      CountsDictionary counts;
+      auto &measurements = resultJson["data"]["measurementCounts"];
+      
+      for (const auto &[bitstring, count] : measurements.items()) {
+        counts[bitstring] = static_cast<std::size_t>(count);
+      }
+      
+      std::vector<ExecutionResult> execResults;
+      execResults.emplace_back(ExecutionResult{counts});
+      return cudaq::sample_result(execResults);
     }
+    
+    cudaq::info("Direct endpoint did not provide expected results format, falling back");
+  } catch (const std::exception &e) {
+    cudaq::info("Exception when using direct results endpoint: {}", e.what());
+    cudaq::info("Falling back to original results processing method");
+  }
+  
+  // Original result processing as fallback
+  cudaq::info("Processing results from job response for job {}", jobId);
+  auto &job = getJobResponse["jobsArray"][0];
+  
+  if (!job.contains("measurementCounts")) {
+    cudaq::info("Job response missing measurementCounts field");
+    throw std::runtime_error("No measurement counts in response");
+  }
 
-    std::vector<ExecutionResult> execResults;
-    execResults.emplace_back(ExecutionResult{counts});
+  CountsDictionary counts;
+  auto &measurements = job["measurementCounts"];
+  
+  for (const auto &[bitstring, count] : measurements.items()) {
+    counts[bitstring] = count.get<std::size_t>();
+  }
 
-    return cudaq::sample_result(execResults);
+  std::vector<ExecutionResult> execResults;
+  execResults.emplace_back(ExecutionResult{counts});
+
+  return cudaq::sample_result(execResults);
 }
 
 private:
@@ -183,7 +219,7 @@ private:
     return config.find(key) != config.end() ? config.at(key) : defaultValue;
   }
 };
-
 }
+
 
 CUDAQ_REGISTER_TYPE(cudaq::ServerHelper, cudaq::QbraidServerHelper, qbraid)
