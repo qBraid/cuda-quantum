@@ -26,7 +26,7 @@ public:
     backendConfig["url"] = getValueOrDefault(config, "url", DEFAULT_URL);
     backendConfig["device_id"] = getValueOrDefault(config, "device_id", DEFAULT_DEVICE);
     backendConfig["user_agent"] = "cudaq/" + std::string(cudaq::getVersion());
-    backendConfig["qubits"] = std::to_string(DEFAULT_QUBITS);  // Set default qubits
+    backendConfig["qubits"] = std::to_string(DEFAULT_QUBITS); 
     
     // Get API key from environment
     backendConfig["api_key"] = getEnvVar("QBRAID_API_KEY", "", true);
@@ -36,7 +36,7 @@ public:
     // result endpoints
     backendConfig["results_path"] = backendConfig["url"] + "/quantum-jobs/result/";
 
-    // Add results output directory and file naming pattern
+    // Add results output directory 
     backendConfig["results_output_dir"] = getValueOrDefault(config, "results_output_dir", "./qbraid_results");
     backendConfig["results_file_prefix"] = getValueOrDefault(config, "results_file_prefix", "qbraid_job_");
 
@@ -95,24 +95,22 @@ public:
   std::string constructGetJobPath(ServerMessage &postResponse) override {
     if (!postResponse.contains("qbraidJobId"))
       throw std::runtime_error("ServerMessage doesn't contain 'qbraidJobId' key.");
-    // Use qbraidJobId instead of vendorJobId
     return backendConfig.at("job_path") + "?qbraidJobId=" + 
            postResponse.at("qbraidJobId").get<std::string>();
   }
 
   std::string constructGetJobPath(std::string &jobId) override {
-    // Use qbraidJobId instead of vendorJobId
     return backendConfig.at("job_path") + "?qbraidJobId=" + jobId;
   }
 
-  // Getting results path - simplified to match working implementation
+  // Getting results path 
   std::string constructGetResultsPath(const std::string &jobId) {
     return backendConfig.at("results_path") + jobId;
   }
 
-  // Job is done with sample results api - simplified based on working implementation
+  // Job is done with sample results api
   bool jobIsDone(ServerMessage &getJobResponse) override {
-    // Save the current job response to a file regardless of status
+    // Save the current job response to a file
     saveResponseToFile(getJobResponse);
     
     std::string status;
@@ -252,13 +250,13 @@ public:
   }
 
 private:
-  // New method to save response to file
+  // Method to save response to file
   void saveResponseToFile(const ServerMessage &response, const std::string &identifier = "") {
     try {
       std::string outputDir = backendConfig.at("results_output_dir");
       std::string filePrefix = backendConfig.at("results_file_prefix");
       
-      // Create a unique filename using timestamp if no identifier provided
+      // Create a unique filename using timestamp if no identifier is provided
       std::string filename;
       if (identifier.empty()) {
         auto now = std::chrono::system_clock::now();
@@ -276,7 +274,7 @@ private:
         return;
       }
       
-      outputFile << response.dump(2); // 2 spaces for indentation
+      outputFile << response.dump(2);
       outputFile.close();
       
       cudaq::info("Response saved to file: {}", filename);
