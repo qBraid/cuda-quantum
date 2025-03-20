@@ -13,7 +13,7 @@
 // RUN: nvq++ --target ionq                     --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target iqm --iqm-machine Apollo --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target oqc                      --emulate %s -o %t && %t | FileCheck %s
-// RUN: nvq++ --target qbraid                      --emulate %s -o %t && %t | FileCheck %s
+// RUN: nvq++ --target qbraid                   --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target quantinuum               --emulate %s -o %t && %t | FileCheck %s
 // clang-format on
 
