@@ -112,6 +112,10 @@ public:
                              const std::vector<std::size_t> &controls,
                              const std::vector<std::size_t> &qubitIds,
                              const cudaq::spin_op &op) override {
+    if (this->isInTracerMode()) {
+      nvqir::CircuitSimulator::applyExpPauli(theta, controls, qubitIds, op);
+      return;
+    }
     // Special handling for equivalence of Rxx(theta), Ryy(theta), Rzz(theta)
     // expressed as exp_pauli.
     //  Note: for MPS, the runtime is ~ linear with the number of 2-body gates
@@ -176,6 +180,11 @@ public:
     for (auto &tensor : m_mpsTensors_d) {
       HANDLE_CUDA_ERROR(cudaFree(tensor.deviceData));
     }
+
+    if (m_state->hasGeneralChannelApplied() && m_state->getNumQubits() <= 1)
+      throw std::runtime_error(
+          "MPS noisy simulation currently does not support the case where "
+          "number of qubit is equal to 1");
     m_mpsTensors_d.clear();
     m_mpsTensors_d =
         m_state->setupMPSFactorize(m_settings.maxBond, m_settings.absCutoff,
@@ -407,7 +416,7 @@ public:
   }
 
   bool requireCacheWorkspace() const override { return false; }
-
+  bool canHandleGeneralNoiseChannel() const override { return true; }
   virtual ~SimulatorMPS() noexcept {
     for (auto &tensor : m_mpsTensors_d) {
       HANDLE_CUDA_ERROR(cudaFree(tensor.deviceData));
