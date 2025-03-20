@@ -11,7 +11,7 @@
 namespace cudaq {
 
 class QbraidServerHelper : public ServerHelper {
-  static constexpr const char *DEFAULT_URL = "http://192.168.20.159:8080/api";
+  static constexpr const char *DEFAULT_URL = "https://api.qbraid.com/api";
   static constexpr const char *DEFAULT_DEVICE = "ionq_simulator";
   static constexpr int DEFAULT_QUBITS = 29;
 
@@ -21,28 +21,18 @@ public:
   void initialize(BackendConfig config) override {
     cudaq::info("Initializing Qbraid Backend.");
 
-    // Initialize required configuration
     backendConfig.clear();
     backendConfig["url"] = getValueOrDefault(config, "url", DEFAULT_URL);
-    backendConfig["device_id"] =
-        getValueOrDefault(config, "device_id", DEFAULT_DEVICE);
+    backendConfig["device_id"] = getValueOrDefault(config, "device_id", DEFAULT_DEVICE);
     backendConfig["user_agent"] = "cudaq/" + std::string(cudaq::getVersion());
     backendConfig["qubits"] = std::to_string(DEFAULT_QUBITS);
 
-    // Get API key from environment
     backendConfig["api_key"] = getEnvVar("QBRAID_API_KEY", "", true);
-
-    // Job endpoints
     backendConfig["job_path"] = backendConfig["url"] + "/quantum-jobs";
-    // result endpoints
-    backendConfig["results_path"] =
-        backendConfig["url"] + "/quantum-jobs/result/";
+    backendConfig["results_path"] = backendConfig["url"] + "/quantum-jobs/result/";
 
-    // Add results output directory
-    backendConfig["results_output_dir"] =
-        getValueOrDefault(config, "results_output_dir", "./qbraid_results");
-    backendConfig["results_file_prefix"] =
-        getValueOrDefault(config, "results_file_prefix", "qbraid_job_");
+    backendConfig["results_output_dir"] = getValueOrDefault(config, "results_output_dir", "./qbraid_results");
+    backendConfig["results_file_prefix"] = getValueOrDefault(config, "results_file_prefix", "qbraid_job_");
 
     if (!config["shots"].empty()) {
       backendConfig["shots"] = config["shots"];
@@ -59,7 +49,6 @@ public:
       cudaq::info("  {} = {}", key, value);
     }
 
-    // Create results directory if it doesn't exist
     std::string resultsDir = backendConfig["results_output_dir"];
     std::filesystem::create_directories(resultsDir);
     cudaq::info("Created results directory: {}", resultsDir);
@@ -68,8 +57,7 @@ public:
   ServerJobPayload
   createJob(std::vector<KernelExecution> &circuitCodes) override {
     if (backendConfig.find("job_path") == backendConfig.end()) {
-      throw std::runtime_error(
-          "job_path not found in config. Was initialize() called?");
+      throw std::runtime_error("job_path not found in config. Was initialize() called?");
     }
 
     std::vector<ServerMessage> jobs;
@@ -92,48 +80,38 @@ public:
   }
 
   std::string extractJobId(ServerMessage &postResponse) override {
-    if (!postResponse.contains("qbraidJobId"))
-      throw std::runtime_error(
-          "ServerMessage doesn't contain 'qbraidJobId' key.");
+    if (!postResponse.contains("qbraidJobId")) {
+      throw std::runtime_error("ServerMessage doesn't contain 'qbraidJobId' key.");
+    }
     return postResponse.at("qbraidJobId");
   }
 
   std::string constructGetJobPath(ServerMessage &postResponse) override {
-    if (!postResponse.contains("qbraidJobId"))
-      throw std::runtime_error(
-          "ServerMessage doesn't contain 'qbraidJobId' key.");
-    return backendConfig.at("job_path") +
-           "?qbraidJobId=" + postResponse.at("qbraidJobId").get<std::string>();
+    if (!postResponse.contains("qbraidJobId")) {
+      throw std::runtime_error("ServerMessage doesn't contain 'qbraidJobId' key.");
+    }
+
+    return backendConfig.at("job_path") + "?qbraidJobId=" + postResponse.at("qbraidJobId").get<std::string>();
   }
 
   std::string constructGetJobPath(std::string &jobId) override {
     return backendConfig.at("job_path") + "?qbraidJobId=" + jobId;
   }
 
-  // Getting results path
   std::string constructGetResultsPath(const std::string &jobId) {
     return backendConfig.at("results_path") + jobId;
   }
 
-  // Job is done with sample results api
   bool jobIsDone(ServerMessage &getJobResponse) override {
-
     std::string status;
 
-    // Check if response has the jobsArray format
-    if (getJobResponse.contains("jobsArray") &&
-        !getJobResponse["jobsArray"].empty()) {
+    if (getJobResponse.contains("jobsArray") && !getJobResponse["jobsArray"].empty()) {
       status = getJobResponse["jobsArray"][0]["status"].get<std::string>();
       cudaq::info("Job status from jobs endpoint: {}", status);
-    }
-    // Check if it uses the direct format
-    else if (getJobResponse.contains("status")) {
+    } else if (getJobResponse.contains("status")) {
       status = getJobResponse["status"].get<std::string>();
       cudaq::info("Job status from direct response: {}", status);
-    }
-    // Or if it's in the data object
-    else if (getJobResponse.contains("data") &&
-             getJobResponse["data"].contains("status")) {
+    } else if (getJobResponse.contains("data") && getJobResponse["data"].contains("status")) {
       status = getJobResponse["data"]["status"].get<std::string>();
       cudaq::info("Job status from data object: {}", status);
     } else {
@@ -141,24 +119,16 @@ public:
       throw std::runtime_error("Invalid job response format");
     }
 
-    if (status == "FAILED")
-      // Save job response to a file
+    if (status == "FAILED" || status == "COMPLETED" || status == "CANCELLED") {
       saveResponseToFile(getJobResponse);
-    throw std::runtime_error("The job failed upon submission. Check your "
-                             "qBraid account for more information.");
+      return true;
+    }
 
-    // Save job response to a file
-    saveResponseToFile(getJobResponse);
-    return status == "COMPLETED";
+    return false;
   }
 
   // Sample results with results api - with retry logic
-  cudaq::sample_result processResults(ServerMessage &getJobResponse,
-                                      std::string &jobId) override {
-    // Save the final job response to file
-    // saveResponseToFile(getJobResponse, jobId + "_final");
-
-    // Try to get results using the direct results endpoint with retries
+  cudaq::sample_result processResults(ServerMessage &getJobResponse, std::string &jobId) override {
     int maxRetries = 5;
     int waitTime = 2;
     float backoffFactor = 2.0;
@@ -168,15 +138,9 @@ public:
         auto resultsPath = constructGetResultsPath(jobId);
         auto headers = getHeaders();
 
-        cudaq::info(
-            "Fetching results using direct endpoint (attempt {}/{}): {}",
-            attempt + 1, maxRetries, resultsPath);
+        cudaq::info("Fetching results using direct endpoint (attempt {}/{}): {}", attempt + 1, maxRetries, resultsPath);
         RestClient client;
         auto resultJson = client.get("", resultsPath, headers, true);
-
-        // Save direct results response to file
-        // saveResponseToFile(resultJson, jobId + "_direct_results_" +
-        // std::to_string(attempt));
 
         if (resultJson.contains("error") && !resultJson["error"].is_null()) {
           std::string errorMsg = resultJson["error"].is_string()
@@ -184,12 +148,10 @@ public:
                                      : resultJson["error"].dump();
           cudaq::info("Error from results endpoint: {}", errorMsg);
 
-          // Only throw if on last attempt
           if (attempt == maxRetries - 1) {
             throw std::runtime_error("Error retrieving results: " + errorMsg);
           }
-        } else if (resultJson.contains("data") &&
-                   resultJson["data"].contains("measurementCounts")) {
+        } else if (resultJson.contains("data") && resultJson["data"].contains("measurementCounts")) {
           cudaq::info("Processing results from direct endpoint");
           CountsDictionary counts;
           auto &measurements = resultJson["data"]["measurementCounts"];
@@ -208,21 +170,15 @@ public:
 
         // If we get here, no valid data was found but also no error - retry
         if (attempt < maxRetries - 1) {
-          int sleepTime = (attempt == 0)
-                              ? waitTime
-                              : waitTime * std::pow(backoffFactor, attempt);
-          cudaq::info("No valid results yet, retrying in {} seconds",
-                      sleepTime);
+          int sleepTime = (attempt == 0) ? waitTime : waitTime * std::pow(backoffFactor, attempt);
+          cudaq::info("No valid results yet, retrying in {} seconds", sleepTime);
           std::this_thread::sleep_for(std::chrono::seconds(sleepTime));
         }
 
       } catch (const std::exception &e) {
-        cudaq::info("Exception when using direct results endpoint: {}",
-                    e.what());
+        cudaq::info("Exception when using direct results endpoint: {}", e.what());
         if (attempt < maxRetries - 1) {
-          int sleepTime = (attempt == 0)
-                              ? waitTime
-                              : waitTime * std::pow(backoffFactor, attempt);
+          int sleepTime = (attempt == 0) ? waitTime : waitTime * std::pow(backoffFactor, attempt);
           cudaq::info("Retrying in {} seconds", sleepTime);
           std::this_thread::sleep_for(std::chrono::seconds(sleepTime));
         } else {
@@ -233,8 +189,7 @@ public:
 
     // Original result processing as fallback
     cudaq::info("Processing results from job response for job {}", jobId);
-    if (getJobResponse.contains("jobsArray") &&
-        !getJobResponse["jobsArray"].empty()) {
+    if (getJobResponse.contains("jobsArray") && !getJobResponse["jobsArray"].empty()) {
       auto &job = getJobResponse["jobsArray"][0];
 
       if (job.contains("measurementCounts")) {
@@ -265,14 +220,17 @@ public:
       return cudaq::sample_result(execResults);
     }
 
-    throw std::runtime_error(
-        "No measurement counts found in any response format");
+    throw std::runtime_error("No measurement counts found in any response format");
+  }
+
+  /// @brief Override the polling interval method
+  std::chrono::microseconds
+  nextResultPollingInterval(ServerMessage &postResponse) override {
+    return std::chrono::seconds(1);
   }
 
 private:
-  // Method to save response to file
-  void saveResponseToFile(const ServerMessage &response,
-                          const std::string &identifier = "") {
+  void saveResponseToFile(const ServerMessage &response, const std::string &identifier = "") {
     try {
       std::string outputDir = backendConfig.at("results_output_dir");
       std::string filePrefix = backendConfig.at("results_file_prefix");
@@ -281,16 +239,12 @@ private:
       std::string filename;
       if (identifier.empty()) {
         auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             now.time_since_epoch())
-                             .count();
-        filename =
-            outputDir + "/" + filePrefix + std::to_string(timestamp) + ".json";
+        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        filename = outputDir + "/" + filePrefix + std::to_string(timestamp) + ".json";
       } else {
         filename = outputDir + "/" + filePrefix + identifier + ".json";
       }
 
-      // Write the JSON response to the file with proper formatting
       std::ofstream outputFile(filename);
       if (!outputFile.is_open()) {
         cudaq::info("Failed to open file for writing: {}", filename);
@@ -308,8 +262,7 @@ private:
 
   RestHeaders getHeaders() override {
     if (backendConfig.find("api_key") == backendConfig.end()) {
-      throw std::runtime_error(
-          "API key not found in config. Was initialize() called?");
+      throw std::runtime_error("API key not found in config. Was initialize() called?");
     }
 
     RestHeaders headers;
@@ -319,12 +272,13 @@ private:
     return headers;
   }
 
-  std::string getEnvVar(const std::string &key, const std::string &defaultVal,
-                        const bool isRequired) const {
+  std::string getEnvVar(const std::string &key, const std::string &defaultVal, const bool isRequired) const {
     const char *env_var = std::getenv(key.c_str());
     if (env_var == nullptr) {
-      if (isRequired)
+      if (isRequired) {
         throw std::runtime_error(key + " environment variable is not set.");
+      }
+
       return defaultVal;
     }
     return std::string(env_var);
