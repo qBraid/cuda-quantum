@@ -13,7 +13,7 @@
 // RUN: nvq++ --target ionq                               --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target iqm --iqm-machine Adonis           --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target oqc                                --emulate %s -o %t && %t | FileCheck %s
-// RUN: nvq++ --target qbraid                                --emulate %s -o %t && %t | FileCheck %s
+// RUN: nvq++ --target qbraid                             --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ --target quantinuum                         --emulate %s -o %t && %t | FileCheck %s
 // Tests for --disable-qubit-mapping:
 // RUN: nvq++ -v %s -o %t --target oqc --emulate --disable-qubit-mapping && CUDAQ_MLIR_PRINT_EACH_PASS=1 %t |& FileCheck --check-prefix=DISABLE %s
