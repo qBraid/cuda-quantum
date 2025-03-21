@@ -6,171 +6,156 @@
 # the terms of the Apache License 2.0 which accompanies this distribution.     #
 # ============================================================================ #
 
-#Also not worked on for qbraid. Just a placeholder (IonQ)!
+import itertools
+import random
+import re
+import uuid
+from typing import Any, Optional
 
-import cudaq
-from fastapi import FastAPI, HTTPException, Header
-from typing import Union
-import uvicorn, uuid, base64, ctypes
+import uvicorn
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
-from llvmlite import binding as llvm
 
 # Define the REST Server App
 app = FastAPI()
 
 
-class Input(BaseModel):
-    format: str
-    data: str
-
-
-# Jobs look like the following type
 class Job(BaseModel):
-    target: str
-    qubits: str
+    """Data required to submit a quantum job."""
+
+    openQasm: str
     shots: int
-    input: Input
+    qbraidDeviceId: str
 
 
-# Keep track of Job Ids to their Names
-createdJobs = {}
-
-# Could how many times the client has requested the Job
-countJobGetRequests = 0
-
-# Save how many qubits were needed for each test (emulates real backend)
-numQubitsRequired = 0
-
-llvm.initialize()
-llvm.initialize_native_target()
-llvm.initialize_native_asmprinter()
-target = llvm.Target.from_default_triple()
-targetMachine = target.create_target_machine()
-backing_mod = llvm.parse_assembly("")
-engine = llvm.create_mcjit_compiler(backing_mod, targetMachine)
+# Global variables to store job data and results
+JOBS_MOCK_DB = {}
+JOBS_MOCK_RESULTS = {}
 
 
-def getKernelFunction(module):
-    for f in module.functions:
-        if not f.is_declaration:
-            return f
-    return None
+def count_qubits(qasm: str) -> int:
+    """Extracts the number of qubits from an OpenQASM string."""
+    pattern = r"qreg\s+\w+\[(\d+)\];"
+
+    match = re.search(pattern, qasm)
+
+    if match:
+        return int(match.group(1))
+
+    raise ValueError("No qreg declaration found in the OpenQASM string.")
 
 
-def getNumRequiredQubits(function):
-    for a in function.attributes:
-        if "requiredQubits" in str(a):
-            return int(
-                str(a).split("requiredQubits\"=")[-1].split(" ")[0].replace(
-                    "\"", "").replace("'", ""))
+def simulate_job(qasm: str, num_shots: int) -> dict[str, int]:
+    """Simulates a quantum job by generating random measurement outcomes."""
+    num_qubits = count_qubits(qasm)
+
+    all_states = ["".join(p) for p in itertools.product("01", repeat=num_qubits)]
+    num_states_to_select = random.randint(1, len(all_states))
+    selected_states = random.sample(all_states, num_states_to_select)
+    distribution = random.choices(selected_states, k=num_shots)
+
+    result = {state: distribution.count(state) for state in selected_states}
+
+    return result
 
 
-# Here we test that the login endpoint works
-@app.post("/login")
-async def login(token: Union[str, None] = Header(alias="Authorization",
-                                                 default=None)):
-    if token == None:
-        raise HTTPException(status_code(401), detail="Credentials not provided")
-    return {"id-token": "hello", "refresh-token": "refreshToken"}
+def poll_job_status(job_id: str) -> dict[str, Any]:
+    """Updates the status of a job and returns the updated job data."""
+    if job_id not in JOBS_MOCK_DB:
+        raise HTTPException(status_code=404, detail="Job not found")
 
+    status = JOBS_MOCK_DB[job_id]["status"]
 
-# Here we expose a way to post jobs,
-# Must have a Access Token, Job Program must be Adaptive Profile
-# with entry_point tag
-@app.post("/v0.3/jobs")
-async def postJob(job: Job,
-                  token: Union[str, None] = Header(alias="Authorization",
-                                                   default=None)):
-    global createdJobs, shots, numQubitsRequired
-
-    if token == None:
-        raise HTTPException(status_code(401), detail="Credentials not provided")
-
-    print('Posting job with shots = ', job.shots)
-    newId = str(uuid.uuid4())
-    shots = job.shots
-    program = job.input.data
-    decoded = base64.b64decode(program)
-    m = llvm.module.parse_bitcode(decoded)
-    mstr = str(m)
-    assert ('entry_point' in mstr)
-
-    # Get the function, number of qubits, and kernel name
-    function = getKernelFunction(m)
-    if function == None:
-        raise Exception("Could not find kernel function")
-    numQubitsRequired = getNumRequiredQubits(function)
-    kernelFunctionName = function.name
-
-    print("Kernel name = ", kernelFunctionName)
-    print("Requires {} qubits".format(numQubitsRequired))
-
-    # JIT Compile and get Function Pointer
-    engine.add_module(m)
-    engine.finalize_object()
-    engine.run_static_constructors()
-    funcPtr = engine.get_function_address(kernelFunctionName)
-    kernel = ctypes.CFUNCTYPE(None)(funcPtr)
-
-    # Invoke the Kernel
-    cudaq.testing.toggleDynamicQubitManagement()
-    qubits, context = cudaq.testing.initialize(numQubitsRequired, job.shots)
-    kernel()
-    results = cudaq.testing.finalize(qubits, context)
-    results.dump()
-    createdJobs[newId] = results
-
-    engine.remove_module(m)
-
-    # Job "created", return the id
-    return {"id": newId, "jobs": {"status": "running"}}
-
-
-# Retrieve the job, simulate having to wait by counting to 3
-# until we return the job results
-@app.get("/v0.3/jobs")
-async def getJob(id: str):
-    global countJobGetRequests, createdJobs, numQubitsRequired
-
-    # Simulate asynchronous execution
-    if countJobGetRequests < 3:
-        countJobGetRequests += 1
-        return {"jobs": [{"status": "running"}]}
-
-    countJobGetRequests = 0
-    res = {
-        "jobs": [{
-            "status": "completed",
-            "qubits": numQubitsRequired,
-            "results_url": "/v0.3/jobs/{}/results".format(id)
-        }]
+    status_transitions = {
+        "INITIALIZING": "QUEUED",
+        "QUEUED": "RUNNING",
+        "RUNNING": "COMPLETED",
+        "CANCELLING": "CANCELLED",
     }
+
+    new_status = status_transitions.get(status, status)
+    JOBS_MOCK_DB[job_id]["status"] = new_status
+
+    return {"qbraidJobId": job_id, **JOBS_MOCK_DB[job_id]}
+
+
+@app.post("/quantum-jobs")
+async def postJob(job: Job, api_key: Optional[str] = Header(None, alias="api-key")):
+    """Submit a quantum job for execution."""
+    if api_key is None:
+        raise HTTPException(status_code=401, detail="API key is required")
+
+    newId = str(uuid.uuid4())
+
+    # TODO: Do this in a cuda-quantum way
+    counts = simulate_job(job.openQasm, job.shots)
+
+    job_data = {"status": "INITIALIZING", "statusText": "", **job.model_dump()}
+
+    JOBS_MOCK_DB[newId] = job_data
+    JOBS_MOCK_RESULTS[newId] = {"measurementCounts": counts}
+
+    return {"qbraidJobId": newId, **job_data}
+
+
+@app.get("/quantum-jobs")
+async def getJobs(
+    job_id: Optional[str] = Query(None, alias="qbraidJobId"),
+    api_key: Optional[str] = Header(None, alias="api-key"),
+):
+    """Retrieve the status of one or more quantum jobs."""
+    if api_key is None:
+        raise HTTPException(status_code=401, detail="API key is required")
+
+    jobs_array = []
+    if job_id is None:
+        for job in JOBS_MOCK_DB:
+            job_data = poll_job_status(job)
+            jobs_array.append(job_data)
+    else:
+        job_data = poll_job_status(job_id)
+        jobs_array.append(job_data)
+
+    res = {"jobsArray": jobs_array, "total": len(jobs_array)}
+
     return res
 
 
-@app.get("/v0.3/jobs/{jobId}/results")
-async def getResults(jobId: str):
-    global countJobGetRequests, createdJobs
+@app.get("/quantum-jobs/result/{job_id}")
+async def getJobResult(job_id: str, api_key: Optional[str] = Header(None, alias="api-key")):
+    """Retrieve the results of a quantum job."""
+    if api_key is None:
+        raise HTTPException(status_code=401, detail="API key is required")
 
-    counts = createdJobs[jobId]
-    counts.dump()
-    retData = {}
-    N = 0
-    for bits, count in counts.items():
-        N += count
-    # Note, the real IonQ backend reverses the bitstring relative to what the
-    # simulator does, so flip the bitstring with [::-1]. Also convert
-    # to decimal to match the real IonQ backend.
-    for bits, count in counts.items():
-        retData[str(int(bits[::-1], 2))] = float(count / N)
+    if job_id not in JOBS_MOCK_DB:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    res = retData
-    return res
+    if JOBS_MOCK_DB[job_id]["status"] in {"FAILED", "CANCELLED"}:
+        raise HTTPException(
+            status_code=409, detail="Results unavailable. Job failed or was cancelled."
+        )
+
+    if JOBS_MOCK_DB[job_id]["status"] != "COMPLETED":
+        return {
+            "error": "Job still in progress. Results will be available once job is completed.",
+            "data": {},
+        }
+
+    if job_id not in JOBS_MOCK_RESULTS:
+        raise HTTPException(status_code=500, detail="Job results not found")
+
+    if random.random() < 0.2:
+        return {"error": "Failed to retrieve job results. Please wait, and try again.", "data": {}}
+
+    result = JOBS_MOCK_RESULTS[job_id]
+
+    return result
 
 
 def startServer(port):
-    uvicorn.run(app, port=port, host='0.0.0.0', log_level="info")
+    """Start the REST server."""
+    uvicorn.run(app, port=port, host="0.0.0.0", log_level="info")
 
 
-if __name__ == '__main__':
-    startServer(62449)
+if __name__ == "__main__":
+    startServer(62447)
