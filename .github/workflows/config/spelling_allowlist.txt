@@ -27,6 +27,7 @@ DCO
 DGX
 DOI
 Deuteron
+Deutsch
 Doxygen
 FPGAs
 Fock
@@ -54,6 +55,7 @@ Jupyter
 JupyterLab
 Kagome
 Kraus
+Krylov
 LLVM
 LSB
 Libraries
@@ -82,6 +84,7 @@ OpenSUSE
 Ou
 POSIX
 PSIRT
+Pasqal
 Pauli
 Paulis
 Photonic
@@ -98,6 +101,7 @@ QPU
 QPUs
 QPU’s
 QTX
+QX
 Qiskit
 QuEra
 QuTiP
@@ -124,11 +128,13 @@ UCCSD
 VQE
 Vazirani
 WSL
+Zener
 accessor
 acknowledgement
 adaptor
 adaptors
 adjoint
+afqmc
 al
 amongst
 ancilla
@@ -139,6 +145,7 @@ arity
 auxillary
 backend
 backends
+bernstein
 bitcode
 bitstring
 bitstrings
@@ -146,6 +153,7 @@ bmatrix
 bool
 boolean
 boson
+bosonic
 broadcasted
 buildable
 callable
@@ -168,7 +176,9 @@ coprocessor
 coprocessors
 copyable
 coreset
+coresets
 cortex-cli
+counterdiabatic
 coupler
 couplers
 cuQuantum
@@ -187,11 +197,13 @@ dendrogram
 deserialize
 destructor
 detuning
+deutsch
 dimensionality
 discoverable
 discretization
 discretize
 discretized
+eigenbasis
 eigensolver
 eigensolvers
 eigenstate
@@ -201,6 +213,7 @@ eigenvalues
 eigenvector
 eigenvectors
 endian
+endianness
 enqueue
 enqueues
 enqueuing
@@ -218,8 +231,12 @@ extremal
 fermionic
 fermioniq
 fmt
+fourier
 frontend
 frontends
+hadamard
+hamiltonian
+heisenberg
 homogenous
 iff
 increment
@@ -238,6 +255,7 @@ intrinsics
 iterable
 iteratively
 kets
+krylov
 linker
 linkers
 logarithmically
@@ -271,6 +289,8 @@ preprocessor
 probability
 programmatically
 pybind
+qaoa
+qed
 quantize
 quantized
 qubit
@@ -289,8 +309,10 @@ scalable
 sexualized
 shifter
 shifters
+shors
 splitter
 splitters
+sqale
 statevector
 struct
 structs
@@ -331,9 +353,13 @@ unoptimized
 upvote
 variadic
 variational
+vazirani
 vdots
+vectorization
 verifier
 vertices
+vqe
 waveforms
 wavefunction
 workflow
+zener

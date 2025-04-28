@@ -14,9 +14,14 @@
 
 namespace nvqir {
 /// @brief Base class of `cutensornet` simulator backends
-class SimulatorTensorNetBase : public nvqir::CircuitSimulatorBase<double> {
-
+template <typename ScalarType = double>
+class SimulatorTensorNetBase : public nvqir::CircuitSimulatorBase<ScalarType> {
 public:
+  using DataType = std::complex<ScalarType>;
+  static constexpr cudaDataType_t cudaDataType =
+      std::is_same_v<ScalarType, float> ? CUDA_C_32F : CUDA_C_64F;
+  using GateApplicationTask =
+      typename nvqir::CircuitSimulatorBase<ScalarType>::GateApplicationTask;
   SimulatorTensorNetBase();
   SimulatorTensorNetBase(const SimulatorTensorNetBase &another) = delete;
   SimulatorTensorNetBase &
@@ -35,6 +40,12 @@ public:
                          const std::vector<std::size_t> &controls,
                          const std::vector<std::size_t> &targets,
                          const std::vector<double> &params) override;
+
+  bool isValidNoiseChannel(const cudaq::noise_model_type &type) const override;
+
+  /// @brief Apply the given kraus_channel on the provided targets.
+  void applyNoise(const cudaq::kraus_channel &channel,
+                  const std::vector<std::size_t> &targets) override;
 
   // Override base calculateStateDim (we don't instantiate full state vector in
   // the tensornet backend). When the user want to retrieve the state vector, we
@@ -98,6 +109,10 @@ protected:
   /// intermediate tensors)
   virtual bool requireCacheWorkspace() const = 0;
 
+  /// @brief Return true if this simulator handle general noise channel
+  /// (non-unitary).
+  virtual bool canHandleGeneralNoiseChannel() const = 0;
+
 private:
   // Helper to apply a Kraus channel
   void applyKrausChannel(const std::vector<int32_t> &qubits,
@@ -105,7 +120,7 @@ private:
 
 protected:
   cutensornetHandle_t m_cutnHandle;
-  std::unique_ptr<TensorNetState> m_state;
+  std::unique_ptr<TensorNetState<ScalarType>> m_state;
   std::unordered_map<std::string, void *> m_gateDeviceMemCache;
   ScratchDeviceMem scratchPad;
   // Random number generator for generating 32-bit numbers with a state size of
@@ -129,3 +144,5 @@ protected:
 };
 
 } // end namespace nvqir
+
+#include "simulator_cutensornet.inc"

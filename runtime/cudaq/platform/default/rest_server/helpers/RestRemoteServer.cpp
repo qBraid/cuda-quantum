@@ -82,7 +82,8 @@ T getValueOrThrow(llvm::Expected<T> valOrErr,
 // pointers into the code objects inside the JIT.
 void clearRegOpsAndDestroyJIT(std::unique_ptr<llvm::orc::LLJIT> &jit) {
   cudaq::getExecutionManager()->clearRegisteredOperations();
-  jit.release();
+  // Destroys the LLJIT object
+  jit.reset();
 }
 
 class RemoteRestRuntimeServer : public cudaq::RemoteRuntimeServer {
@@ -325,7 +326,8 @@ public:
         gradient->setKernel(fnWrapper);
 
       bool requiresGrad = optimizer.requiresGradients();
-      auto theSpin = **io_context.spin;
+      auto theSpin = *io_context.spin;
+      assert(cudaq::spin_op::canonicalize(theSpin) == theSpin);
 
       result = optimizer.optimize(n_params, [&](const std::vector<double> &x,
                                                 std::vector<double> &grad_vec) {
@@ -404,7 +406,6 @@ public:
                   platform.set_exec_ctx(&io_context);
               });
           io_context.result = counts;
-          platform.set_exec_ctx(&io_context);
         } else {
           // If no conditionals, nothing special to do for library mode
           platform.set_exec_ctx(&io_context);
@@ -414,11 +415,13 @@ public:
           clearRegOpsAndDestroyJIT(llvmJit);
           llvmJit = cudaq::invokeWrappedKernel(ir, std::string(kernelName),
                                                kernelArgs, argsSize);
+          platform.reset_exec_ctx();
         }
       } else {
         platform.set_exec_ctx(&io_context);
         llvmJit = cudaq::invokeWrappedKernel(ir, std::string(kernelName),
                                              kernelArgs, argsSize);
+        platform.reset_exec_ctx();
       }
     } else {
       platform.set_exec_ctx(&io_context);
@@ -440,13 +443,12 @@ public:
                              platform.set_exec_ctx(&io_context);
                          });
         io_context.result = counts;
-        platform.set_exec_ctx(&io_context);
       } else {
         invokeMlirKernel(io_context, m_mlirContext, ir, requestInfo.passes,
                          std::string(kernelName));
+        platform.reset_exec_ctx();
       }
     }
-    platform.reset_exec_ctx();
     // Clear the registered operations before the `llvmJit` goes out of scope
     // so that destruction of registered operations doesn't cause segfaults
     // during shutdown.

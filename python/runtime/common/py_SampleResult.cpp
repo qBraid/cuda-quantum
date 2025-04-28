@@ -47,6 +47,8 @@ Attributes:
       .def("deserialize", &sample_result::deserialize,
            "Deserialize this SampleResult from an existing vector of integers "
            "adhering to the implicit encoding.")
+      .def("get_total_shots", &sample_result::get_total_shots,
+           "Get the total number of shots in the sample result")
       .def(
           "__str__",
           [](sample_result &self) {
@@ -146,7 +148,7 @@ Returns:
   int : The number of times the given bitstring was measured during the experiment.)#")
       .def("get_marginal_counts",
            static_cast<sample_result (sample_result::*)(
-               const std::vector<std::size_t> &, const std::string_view)>(
+               const std::vector<std::size_t> &, const std::string_view) const>(
                &sample_result::get_marginal),
            py::arg("marginal_indices"), py::kw_only(),
            py::arg("register_name") = GlobalRegisterName,
