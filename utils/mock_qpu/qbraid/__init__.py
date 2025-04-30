@@ -196,6 +196,12 @@ async def getJobResult(job_id: str, api_key: Optional[str] = Header(None, alias=
             "error": "Job still in progress. Results will be available once job is completed.",
             "data": {},
         }
+    
+    if random.random() < 0.2:
+        return {
+            "error": "Failed to retrieve job results. Please wait, and try again.",
+            "data": {},
+        }
 
     if job_id not in JOBS_MOCK_RESULTS:
         raise HTTPException(status_code=500, detail="Job results not found")
