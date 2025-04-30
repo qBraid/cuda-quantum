@@ -13,14 +13,13 @@ endif()
 target_compile_definitions(test_qbraid PRIVATE -DNVQIR_BACKEND_NAME=qbraid)
 target_include_directories(test_qbraid PRIVATE ../..)
 target_link_libraries(test_qbraid
-  PRIVATE fmt::fmt-header-only 
-  cudaq-common 
+  PRIVATE fmt::fmt-header-only
+  cudaq-common
   cudaq
   cudaq-builder
   cudaq-mlir-runtime
   cudaq-rest-qpu
-  cudaq-spin 
-  cudaq-platform-default 
+  cudaq-platform-default
   gtest_main)
 
 

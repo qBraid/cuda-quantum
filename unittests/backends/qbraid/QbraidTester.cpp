@@ -6,8 +6,6 @@
  * the terms of the Apache License 2.0 which accompanies this distribution.    *
  ******************************************************************************/
 
-//Not worked on yet for Qbraid. Just serves as a placeholder!!!
-
 #include "CUDAQTestUtils.h"
 #include "common/FmtCore.h"
 #include "cudaq/algorithm.h"
@@ -15,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <stdlib.h>
 
+// Update the backend string to match the QBraid format
 std::string mockPort = "62449";
 std::string backendStringTemplate =
     "qbraid;emulate;false;url;http://localhost:{}";
@@ -70,21 +69,16 @@ CUDAQ_TEST(QbraidTester, checkSampleAsyncLoadFromFile) {
   kernel.h(qubit[0]);
   kernel.mz(qubit[0]);
 
-  // Can sample asynchronously and get a future
   auto future = cudaq::sample_async(kernel);
-
-  // Future can be persisted for later
   {
     std::ofstream out("saveMe.json");
     out << future;
   }
 
-  // Later you can come back and read it in
   cudaq::async_result<cudaq::sample_result> readIn;
   std::ifstream in("saveMe.json");
   in >> readIn;
 
-  // Get the results of the read in future.
   auto counts = readIn.get();
   EXPECT_EQ(counts.size(), 2);
 
@@ -162,12 +156,10 @@ CUDAQ_TEST(QbraidTester, checkObserveAsyncLoadFromFile) {
     out << future;
   }
 
-  // Later you can come back and read it in
   cudaq::async_result<cudaq::observe_result> readIn(&h);
   std::ifstream in("saveMeObserve.json");
   in >> readIn;
 
-  // Get the results of the read in future.
   auto result = readIn.get();
 
   std::remove("saveMeObserve.json");
