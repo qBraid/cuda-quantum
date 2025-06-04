@@ -26,6 +26,7 @@ on:
           - nvqc
           - orca
           - fermioniq
+          - qbraid
       single_test_name:
         type: string
         required: false

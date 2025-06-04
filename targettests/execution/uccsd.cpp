@@ -12,6 +12,7 @@
 // RUN: nvq++ %cpp_std --target ionq --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ %cpp_std --target iqm --iqm-machine Apollo --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ %cpp_std --target oqc --emulate %s -o %t && %t | FileCheck %s
+// RUN: nvq++ %cpp_std --target qbraid --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ %cpp_std --target quantinuum --emulate %s -o %t && %t | FileCheck %s
 // RUN: nvq++ %cpp_std --enable-mlir %s -o %t
 // clang-format on
