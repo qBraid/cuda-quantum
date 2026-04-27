@@ -39,7 +39,7 @@
 
 using namespace mlir;
 
-LLVM_INSTANTIATE_REGISTRY(cudaq::DecompositionPatternType::RegistryType)
+LLVM_INSTANTIATE_REGISTRY(cudaq::DecompositionPatternTypeRegistry)
 
 namespace {
 
@@ -309,6 +309,8 @@ LogicalResult checkAndExtractControls(quake::OperatorInterface op,
 }
 
 // From here on, we define the decomposition patterns ==========================
+#define CONCAT(a, b) CONCAT_INNER(a, b)
+#define CONCAT_INNER(a, b) a##b
 
 /// Macro to register a decomposition pattern with its metadata
 /// Usage: REGISTER_DECOMPOSITION_PATTERN(PatternName, "source_op", "target1",
@@ -332,12 +334,12 @@ LogicalResult checkAndExtractControls(quake::OperatorInterface op,
       return pattern;                                                          \
     }                                                                          \
   };                                                                           \
-  CUDAQ_REGISTER_TYPE(cudaq::DecompositionPatternType, PATTERN##Type, PATTERN)
+  static cudaq::DecompositionPatternTypeRegistry::Add<PATTERN##Type> CONCAT(   \
+      TEMPNAME_, PATTERN)(#PATTERN, "");
 
-// TODO: The decomposition patterns "SToR1", "TToR1", "R1ToU3", "U3ToRotations"
-// can handle arbitrary number of controls, but currently metadata cannot
-// capture this. The pattern types therefore only advertise them for a fixed
-// number of controls (1 for "SToR1" and "TToR1", 0 for the rest).
+// NOTE: The patterns SToR1, TToR1, R1ToU3, and U3ToRotations handle arbitrary
+// control counts and are registered with (n) metadata. R1ToRz explicitly
+// rejects controlled ops and uses bare metadata.
 
 //===----------------------------------------------------------------------===//
 // HOp decompositions
@@ -608,7 +610,7 @@ struct R1ToU3 : public cudaq::DecompositionPattern<R1ToU3Type, quake::R1Op> {
     return success();
   }
 };
-REGISTER_DECOMPOSITION_PATTERN(R1ToU3, "r1", "u3");
+REGISTER_DECOMPOSITION_PATTERN(R1ToU3, "r1(n)", "u3(n)");
 
 // quake.r1<adj> (θ) target
 // ─────────────────────────────────
@@ -800,7 +802,7 @@ struct SToR1 : public cudaq::DecompositionPattern<SToR1Type, quake::SOp> {
     return success();
   }
 };
-REGISTER_DECOMPOSITION_PATTERN(SToR1, "s(1)", "r1(1)");
+REGISTER_DECOMPOSITION_PATTERN(SToR1, "s(n)", "r1(n)");
 
 //===----------------------------------------------------------------------===//
 // TOp decompositions
@@ -881,7 +883,7 @@ struct TToR1 : public cudaq::DecompositionPattern<TToR1Type, quake::TOp> {
     return success();
   }
 };
-REGISTER_DECOMPOSITION_PATTERN(TToR1, "t(1)", "r1(1)");
+REGISTER_DECOMPOSITION_PATTERN(TToR1, "t(n)", "r1(n)");
 
 //===----------------------------------------------------------------------===//
 // XOp decompositions
@@ -1818,7 +1820,7 @@ struct U3ToRotations
     return success();
   }
 };
-REGISTER_DECOMPOSITION_PATTERN(U3ToRotations, "u3", "rz", "rx");
+REGISTER_DECOMPOSITION_PATTERN(U3ToRotations, "u3(n)", "rz(n)", "rx(n)");
 
 } // namespace
 
@@ -1832,7 +1834,7 @@ void cudaq::populateWithAllDecompositionPatterns(
         std::map<std::string, std::unique_ptr<cudaq::DecompositionPatternType>>
             map;
         for (auto &patternType :
-             cudaq::DecompositionPatternType::RegistryType::entries()) {
+             cudaq::DecompositionPatternTypeRegistry::entries()) {
           map[patternType.getName().str()] = patternType.instantiate();
         }
         return map;
