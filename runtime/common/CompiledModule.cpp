@@ -7,116 +7,91 @@
  ******************************************************************************/
 
 #include "CompiledModule.h"
-#include "cudaq/Optimizer/Builder/RuntimeNames.h"
-#include <memory>
-#include <stdexcept>
+#include <string_view>
 
-using namespace cudaq_internal::compiler;
+cudaq::FatQuakeModule::FatQuakeModule(std::string kernelName)
+    : name(std::move(kernelName)) {}
 
-cudaq::CompiledModule::CompiledModule(std::string kernelName,
-                                      ResultInfo resultInfo)
-    : name(std::move(kernelName)), resultInfo(std::move(resultInfo)) {}
-
-const cudaq::CompiledModule::JitArtifact &
-cudaq::CompiledModule::getJit() const {
-  for (auto &[key, artifact] : artifacts)
-    if (auto *jit = std::get_if<JitArtifact>(&artifact))
-      return *jit;
-  throw std::runtime_error("CompiledModule has no JIT artifact.");
+cudaq::SourceModule::SourceModule(std::string kernelName, KernelThunkType fn)
+    : FatQuakeModule(std::move(kernelName)) {
+  addArtifact(name, FunctionPtrArtifact{fn});
 }
 
-const cudaq::CompiledModule::MlirArtifact &
-cudaq::CompiledModule::getMlir() const {
-  for (auto &[key, artifact] : artifacts)
-    if (auto *mlir = std::get_if<MlirArtifact>(&artifact))
-      return *mlir;
-  throw std::runtime_error("CompiledModule has no MLIR artifact.");
+cudaq::SourceModule::SourceModule(std::string kernelName,
+                                  const void *mlirModuleOpaquePtr)
+    : FatQuakeModule(std::move(kernelName)) {
+  addArtifact(name, MlirArtifact{mlirModuleOpaquePtr, nullptr});
 }
 
-bool cudaq::CompiledModule::hasJit() const {
-  for (auto &[key, artifact] : artifacts)
-    if (std::holds_alternative<JitArtifact>(artifact))
-      return true;
-  return false;
+std::optional<cudaq::FatQuakeModule::JitArtifact>
+cudaq::FatQuakeModule::getJit() const {
+  return getJit(name);
 }
 
-bool cudaq::CompiledModule::hasMlir() const {
-  for (auto &[key, artifact] : artifacts)
-    if (std::holds_alternative<MlirArtifact>(artifact))
-      return true;
-  return false;
+std::optional<cudaq::FatQuakeModule::JitArtifact>
+cudaq::FatQuakeModule::getJit(std::string_view jitName) const {
+  auto *jit = artifacts.get<JitArtifact>(jitName);
+  return jit ? std::optional<JitArtifact>{*jit} : std::nullopt;
 }
 
-bool cudaq::CompiledModule::isFullySpecialized() const {
-  if (!hasJit())
-    return true; // No JIT artifact → fully specialized.
-  return getJit().argsCreator == nullptr;
+std::optional<cudaq::FatQuakeModule::MlirArtifact>
+cudaq::FatQuakeModule::getMlir() const {
+  return getMlir(name);
 }
 
-void cudaq::CompiledModule::addArtifact(std::string name,
+std::optional<cudaq::FatQuakeModule::MlirArtifact>
+cudaq::FatQuakeModule::getMlir(std::string_view mlirName) const {
+  auto *mlir = artifacts.get<MlirArtifact>(mlirName);
+  return mlir ? std::optional<MlirArtifact>{*mlir} : std::nullopt;
+}
+
+std::optional<cudaq::FatQuakeModule::FunctionPtrArtifact>
+cudaq::FatQuakeModule::getFunctionPtr() const {
+  return getFunctionPtr(name);
+}
+
+std::optional<cudaq::FatQuakeModule::FunctionPtrArtifact>
+cudaq::FatQuakeModule::getFunctionPtr(std::string_view fnName) const {
+  auto *fn = artifacts.get<FunctionPtrArtifact>(fnName);
+  return fn ? std::optional<FunctionPtrArtifact>{*fn} : std::nullopt;
+}
+
+bool cudaq::FatQuakeModule::isFullySpecialized() const {
+  return getArgsCreator() == nullptr;
+}
+
+int64_t (*cudaq::FatQuakeModule::getArgsCreator() const)(const void *,
+                                                         void **) {
+  auto jit = getJit(name + ".argsCreator");
+  return jit ? reinterpret_cast<int64_t (*)(const void *, void **)>(jit->fn)
+             : nullptr;
+}
+
+std::optional<std::int64_t> cudaq::FatQuakeModule::getReturnOffset() const {
+  auto jit = getJit(name + ".returnOffset");
+  if (!jit)
+    return std::nullopt;
+  auto fn = reinterpret_cast<std::int64_t (*)()>(jit->fn);
+  return fn();
+}
+
+const cudaq::Resources *cudaq::FatQuakeModule::getResources() const {
+  return getResources(name);
+}
+
+const cudaq::Resources *
+cudaq::FatQuakeModule::getResources(std::string_view resourcesName) const {
+  auto *res = artifacts.get<ResourcesArtifact>(resourcesName);
+  return res ? &res->getResources() : nullptr;
+}
+
+void cudaq::FatQuakeModule::addArtifact(std::string name,
                                         CompiledArtifact artifact) {
-  if (artifacts.contains(name))
-    throw std::runtime_error("Artifact with name " + name + " already exists");
-  artifacts.emplace(std::move(name), std::move(artifact));
+  artifacts.add(std::move(name), std::move(artifact));
 }
 
-cudaq::KernelThunkResultType
-cudaq::CompiledModule::execute(const std::vector<void *> &rawArgs) const {
-  auto &jit = getJit();
-  auto funcPtr = jit.entryPoint;
-  if (resultInfo.hasResult()) {
-    void *buff = const_cast<void *>(rawArgs.back());
-    return reinterpret_cast<KernelThunkResultType (*)(void *, bool)>(funcPtr)(
-        buff, /*client_server=*/false);
-  }
-  if (!isFullySpecialized()) {
-    void *buff = nullptr;
-    jit.argsCreator(static_cast<const void *>(rawArgs.data()), &buff);
-    reinterpret_cast<KernelThunkResultType (*)(void *, bool)>(funcPtr)(
-        buff, /*client_server=*/false);
-    std::free(buff);
-    return {nullptr, 0};
-  }
+void (*cudaq::FatQuakeModule::JitArtifact::getFn() const)() { return fn; }
 
-  funcPtr();
-  return {nullptr, 0};
-}
-
-cudaq::KernelThunkResultType cudaq::CompiledModule::execute() const {
-  if (!isFullySpecialized())
-    throw std::runtime_error(
-        "Kernel has unspecialized parameters; call execute(rawArgs) instead.");
-  if (!resultInfo.hasResult()) {
-    getJit().entryPoint();
-    return {nullptr, 0};
-  }
-  // Allocate a result buffer on-the-fly.
-  auto buf = std::make_unique<char[]>(resultInfo.bufferSize);
-  std::vector<void *> rawArgs = {buf.get()};
-  execute(rawArgs);
-  return {buf.release(), resultInfo.bufferSize};
-}
-
-void (*cudaq::CompiledModule::JitArtifact::getEntryPoint() const)() {
-  return entryPoint;
-}
-
-cudaq::JitEngine cudaq::CompiledModule::JitArtifact::getEngine() const {
+cudaq::JitEngine cudaq::FatQuakeModule::JitArtifact::getEngine() const {
   return engine;
-}
-
-void cudaq::CompiledModule::attachJit(JitEngine engine,
-                                      bool isFullySpecialized) {
-  bool hasResult = resultInfo.hasResult();
-  std::string fullName = cudaq::runtime::cudaqGenPrefixName + name;
-  std::string entryName =
-      (hasResult || !isFullySpecialized) ? name + ".thunk" : fullName;
-  void (*entryPoint)() = engine.lookupRawNameOrFail(entryName);
-  int64_t (*argsCreator)(const void *, void **) = nullptr;
-  if (!isFullySpecialized)
-    argsCreator = reinterpret_cast<int64_t (*)(const void *, void **)>(
-        engine.lookupRawNameOrFail(name + ".argsCreator"));
-
-  addArtifact(name, JitArtifact{std::move(engine), entryPoint, argsCreator,
-                                std::nullopt});
 }
